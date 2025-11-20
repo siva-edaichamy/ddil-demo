@@ -277,7 +277,7 @@
       <h4 id="bannerTitle">Cluster Ready for Demo</h4>
       <p class="muted mb-0" id="bannerSubtitle">All regions are healthy and verification passed.</p>
     </div>
-    <button class="btn btn-outline-light btn-sm" onclick="window.open('{{ demo_url }}','_blank')">Open Demo UI</button>
+    <button class="btn btn-outline-light btn-sm" onclick="openDemoUI()">Open Demo UI</button>
   </section>
 
   <section class="surface">
@@ -562,7 +562,7 @@ async function cleanupData() {
     const result = await response.json();
     
     if (response.ok) {
-      alert('All the data removed');
+      alert('Cache Cleanup Successful');
     } else {
       alert(`❌ Cleanup failed: ${result.message || 'Unknown error'}`);
     }
@@ -591,16 +591,44 @@ async function checkLatency() {
     
     if (response.ok && result.status === 'success') {
       // Build results message
+      // Format output as requested: App in US East reading from...
+      const appRegion = 'US East';
       let message = '📊 Latency Check Results:\n\n';
-      message += `Postgres:\n`;
-      message += `  Read time: ${result.postgres.read_ms}ms\n\n`;
       
-      message += `GemFire Nodes:\n`;
-      for (const [nodeName, nodeResult] of Object.entries(result.gemfire)) {
-        if (nodeResult.success) {
-          message += `  ${nodeName}: ${nodeResult.read_ms}ms\n`;
+      // Map region names for display (EU -> Europe)
+      const regionDisplayMap = {
+        'EU': 'Europe',
+        'US East': 'US East',
+        'US West': 'US West'
+      };
+      
+      // Postgres: App in US East reading from database in US East
+      const postgresRegion = regionDisplayMap[result.postgres.region] || result.postgres.region || appRegion;
+      if (result.postgres.read_ms !== null) {
+        message += `App in ${appRegion} reading from database in ${postgresRegion}: ${result.postgres.read_ms}ms\n`;
+      } else {
+        message += `App in ${appRegion} reading from database in ${postgresRegion}: N/A\n`;
+      }
+      
+      // GemFire nodes: App in US East reading from cache in [region]
+      // Sort by region order: US East, US West, EU
+      const regionOrder = ['US East', 'US West', 'EU'];
+      const sortedNodes = Object.entries(result.gemfire).sort((a, b) => {
+        const regionA = a[1].region || '';
+        const regionB = b[1].region || '';
+        const indexA = regionOrder.indexOf(regionA);
+        const indexB = regionOrder.indexOf(regionB);
+        return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+      });
+      
+      for (const [nodeName, nodeResult] of sortedNodes) {
+        const region = nodeResult.region || 'Unknown';
+        const displayRegion = regionDisplayMap[region] || region;
+        if (nodeResult.success && nodeResult.read_ms !== null) {
+          message += `App in ${appRegion} reading from cache in ${displayRegion}: ${nodeResult.read_ms}ms\n`;
         } else {
-          message += `  ${nodeName}: Failed - ${nodeResult.error || 'Unknown error'}\n`;
+          const errorMsg = nodeResult.error || 'Unknown error';
+          message += `App in ${appRegion} reading from cache in ${displayRegion}: Failed - ${errorMsg}\n`;
         }
       }
       
@@ -677,6 +705,11 @@ async function openDemoDashboard() {
   }
 }
 
+function openDemoUI() {
+  // Use the demo_url from template if available, otherwise auto-detect from current hostname
+  const demoUrl = '{{ demo_url }}' || (window.location.protocol + '//' + window.location.hostname + ':5002');
+  window.open(demoUrl, '_blank');
+}
 
 function disableControls(flag) {
   document.getElementById('setupBtn').disabled = flag;

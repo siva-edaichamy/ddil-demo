@@ -30,6 +30,9 @@ BASE_PATH = "/home/ec2-user/data/ddl-demo"
 LOCATOR_PATH = f"{BASE_PATH}/locator"
 SERVER_PATH = f"{BASE_PATH}/server"
 
+# Demo dashboard URL - can be overridden via DEMO_DASHBOARD_URL environment variable
+# On EC2, set: export DEMO_DASHBOARD_URL=http://<EC2_PUBLIC_IP>:5002
+# Or it will be auto-detected from the request hostname when opening the dashboard
 DEMO_DASHBOARD_URL = os.environ.get("DEMO_DASHBOARD_URL", "http://localhost:5002")
 
 STEPS = [
@@ -69,13 +72,23 @@ demo_dashboard_lock = threading.Lock()
 
 def load_default_session():
     """Load session defaults, preferring values stored in last_session.json."""
+    print(f"🔍 Looking for session file at: {LAST_SESSION_PATH}")
+    print(f"   File exists: {os.path.exists(LAST_SESSION_PATH)}")
+    
     try:
+        if not os.path.exists(LAST_SESSION_PATH):
+            raise FileNotFoundError(f"Session file not found at {LAST_SESSION_PATH}")
+        
         with open(LAST_SESSION_PATH, "r", encoding="utf-8") as fh:
             session = json.load(fh)
+        
+        print(f"   File loaded. Keys found: {list(session.keys())}")
 
         required_keys = {"ssh_user", "ssh_key", "nodes"}
         if not required_keys.issubset(session):
             missing = ", ".join(sorted(required_keys - set(session)))
+            print(f"   ⚠️ Missing required keys: {missing}")
+            print(f"   Available keys: {list(session.keys())}")
             raise KeyError(f"Missing keys: {missing}")
 
         nodes = session.get("nodes") or []
@@ -92,6 +105,8 @@ def load_default_session():
         print(f"ℹ️ last_session.json not found at {LAST_SESSION_PATH}, using defaults")
     except Exception as exc:
         print(f"⚠️ Could not load last_session.json: {exc}. Using built-in defaults.")
+        import traceback
+        traceback.print_exc()
 
     return json.loads(json.dumps(HARDCODED_SESSION))
 
@@ -1490,11 +1505,22 @@ def handle_disconnect():
 def index():
     try:
         session_data = load_default_session()
+        # Auto-detect demo URL from request hostname if using default localhost
+        # This allows it to work automatically on EC2
+        if DEMO_DASHBOARD_URL == "http://localhost:5002":
+            request_host = request.host.split(':')[0]  # Remove port if present
+            if request_host and request_host != "localhost" and request_host != "127.0.0.1":
+                demo_url = f"http://{request_host}:5002"
+            else:
+                demo_url = DEMO_DASHBOARD_URL
+        else:
+            demo_url = DEMO_DASHBOARD_URL
+        
         return render_template(
             "control_index.html",
             session=session_data,
             steps=STEPS,
-            demo_url=DEMO_DASHBOARD_URL,
+            demo_url=demo_url,
         )
     except Exception as e:
         return f"Error loading page: {str(e)}", 500
@@ -1716,19 +1742,19 @@ def cleanup_data():
         warning_count = sum(1 for r in results if r.get("status") == "warning")
         
         if success_count == len(nodes):
-            emit_log(f"✅ Cleanup completed")
+            emit_log(f"✅ Cache Cleanup Successful")
             return jsonify({
                 "status": "success",
-                "message": "Cleanup completed",
+                "message": "Cache Cleanup Successful",
                 "method": "destroy_and_recreate",
                 "nodes_processed": len(nodes),
                 "successful": success_count
             })
         elif success_count > 0:
-            emit_log(f"✅ Cleanup completed")
+            emit_log(f"✅ Cache Cleanup Successful")
             return jsonify({
                 "status": "success",
-                "message": "Cleanup completed",
+                "message": "Cache Cleanup Successful",
                 "nodes_processed": len(nodes),
                 "successful": success_count,
                 "warnings": warning_count
@@ -2030,14 +2056,26 @@ def check_latency():
                 }
                 emit_log(f"❌ {node_name}: Failed to read - {str(e)}")
         
-        # Prepare results
+        # Prepare results with region information
+        # Map node names to regions for display
+        node_to_region = {node["name"]: node.get("region", "") for node in nodes}
+        
         results = {
             "status": "success",
             "postgres": {
-                "read_ms": round(pg_read_time, 2)
+                "read_ms": round(pg_read_time, 2),
+                "region": "US East"  # Assuming Postgres is in US East
             },
-            "gemfire": gemfire_results
+            "gemfire": {}
         }
+        
+        # Add region info to each GemFire result
+        for node_name, node_result in gemfire_results.items():
+            region = node_to_region.get(node_name, "")
+            results["gemfire"][node_name] = {
+                **node_result,
+                "region": region
+            }
         
         emit_log("✅ Latency check complete")
         return jsonify(results)
@@ -2060,7 +2098,16 @@ def start_demo_dashboard():
             # Check if demo dashboard is already running
             if demo_dashboard_process and demo_dashboard_process.poll() is None:
                 emit_log("🌍 Demo dashboard is already running")
-                return jsonify({"status": "already_running", "url": DEMO_DASHBOARD_URL})
+                # Use request hostname if DEMO_DASHBOARD_URL is default localhost
+                if DEMO_DASHBOARD_URL == "http://localhost:5002":
+                    request_host = request.host.split(':')[0]
+                    if request_host and request_host != "localhost" and request_host != "127.0.0.1":
+                        dashboard_url = f"http://{request_host}:5002"
+                    else:
+                        dashboard_url = DEMO_DASHBOARD_URL
+                else:
+                    dashboard_url = DEMO_DASHBOARD_URL
+                return jsonify({"status": "already_running", "url": dashboard_url})
             
             # Check if port 5002 is accessible (demo dashboard might be running externally)
             try:
@@ -2071,7 +2118,16 @@ def start_demo_dashboard():
                 sock.close()
                 if result == 0:
                     emit_log("🌍 Demo dashboard is already running on port 5002")
-                    return jsonify({"status": "already_running", "url": DEMO_DASHBOARD_URL})
+                    # Use request hostname if DEMO_DASHBOARD_URL is default localhost
+                    if DEMO_DASHBOARD_URL == "http://localhost:5002":
+                        request_host = request.host.split(':')[0]
+                        if request_host and request_host != "localhost" and request_host != "127.0.0.1":
+                            dashboard_url = f"http://{request_host}:5002"
+                        else:
+                            dashboard_url = DEMO_DASHBOARD_URL
+                    else:
+                        dashboard_url = DEMO_DASHBOARD_URL
+                    return jsonify({"status": "already_running", "url": dashboard_url})
             except:
                 pass
             
@@ -2134,7 +2190,18 @@ def start_demo_dashboard():
             
             if result == 0:
                 emit_log("✅ Demo dashboard started successfully")
-                return jsonify({"status": "started", "url": DEMO_DASHBOARD_URL})
+                # Use request hostname if DEMO_DASHBOARD_URL is default localhost
+                # This allows it to work automatically on EC2
+                if DEMO_DASHBOARD_URL == "http://localhost:5002":
+                    # Get hostname from request to auto-detect EC2 public IP
+                    request_host = request.host.split(':')[0]  # Remove port if present
+                    if request_host and request_host != "localhost" and request_host != "127.0.0.1":
+                        dashboard_url = f"http://{request_host}:5002"
+                    else:
+                        dashboard_url = DEMO_DASHBOARD_URL
+                else:
+                    dashboard_url = DEMO_DASHBOARD_URL
+                return jsonify({"status": "started", "url": dashboard_url})
             else:
                 emit_log(f"❌ Demo dashboard process running but port 5002 not accessible")
                 return jsonify({"status": "error", "message": "Demo dashboard started but port 5002 not accessible"}), 500

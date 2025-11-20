@@ -338,7 +338,9 @@
   </div>
 
 <script>
-  const socket = io('http://localhost:5002');
+  // Use current hostname and port for SocketIO connection (works on localhost and EC2)
+  const socketUrl = window.location.protocol + '//' + window.location.hostname + ':5002';
+  const socket = io(socketUrl);
   const nodes = {{ nodes|tojson|safe }};
   let submarineDived = false;
 
