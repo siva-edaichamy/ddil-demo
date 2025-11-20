@@ -96,6 +96,38 @@ def load_default_session():
     return json.loads(json.dumps(HARDCODED_SESSION))
 
 
+def save_session(session_data):
+    """Save session data to last_session.json."""
+    try:
+        # Ensure the config directory exists
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        
+        # Validate session data before saving
+        required_keys = {"ssh_user", "ssh_key", "nodes"}
+        if not required_keys.issubset(session_data):
+            missing = ", ".join(sorted(required_keys - set(session_data)))
+            raise ValueError(f"Missing required keys: {missing}")
+        
+        nodes = session_data.get("nodes") or []
+        if not isinstance(nodes, list) or not nodes:
+            raise ValueError("Session must include at least one node definition")
+        
+        # Ensure expected keys are present on each node
+        for idx, node in enumerate(nodes):
+            if not all(k in node for k in ("name", "public_ip", "region")):
+                raise KeyError(f"Node #{idx + 1} missing required fields")
+        
+        # Save to file
+        with open(LAST_SESSION_PATH, "w", encoding="utf-8") as fh:
+            json.dump(session_data, fh, indent=2)
+        
+        print(f"✅ Saved session to {LAST_SESSION_PATH}")
+        return True
+    except Exception as exc:
+        print(f"⚠️ Could not save session to {LAST_SESSION_PATH}: {exc}")
+        return False
+
+
 DEFAULT_SESSION = load_default_session()
 
 
@@ -1541,6 +1573,9 @@ def start_demo():
             for step in wan_setup_steps:
                 emit_status(node["region"], step, "orange")
                 socketio.sleep(0.05)
+
+        # Save session data to last_session.json for future use
+        save_session(data)
 
         socketio.start_background_task(setup_wan_task, data)
         return jsonify({"status": "started"})
