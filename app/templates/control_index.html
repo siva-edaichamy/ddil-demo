@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>GemFire WAN Demo Orchestrator</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #04162e;
+      --bg-secondary: #081f40;
+      --card: rgba(8, 31, 64, 0.92);
+      --border: rgba(0, 149, 211, 0.35);
+      --text: #f6fbff;
+      --muted: #cbe5ff;
+      --accent: #00a9a1;
+      --success: #6db33f;
+      --warn: #f5a623;
+      --error: #ff4b4b;
+      --purple: #7464e2;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(0, 149, 211, 0.4), transparent 45%),
+        radial-gradient(circle at 82% 10%, rgba(0, 167, 157, 0.32), transparent 50%),
+        radial-gradient(circle at 50% 80%, rgba(116, 100, 226, 0.35), transparent 55%),
+        linear-gradient(145deg, #030f24 0%, #00060d 60%, #000307 100%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .surface {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 1.6rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    h2, h4 {
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.85rem;
+      border-radius: 999px;
+      letter-spacing: 0.12em;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      border: 1px solid rgba(0, 149, 211, 0.5);
+      color: var(--muted);
+    }
+
+    .controls button {
+      border-radius: 999px;
+      padding: 0.6rem 1.6rem;
+      border: none;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .controls button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .controls .primary {
+      background: linear-gradient(135deg, var(--accent), var(--vmware-blue, #0095d3));
+      color: #fff;
+      box-shadow: 0 12px 30px rgba(0,149,211,0.35);
+    }
+    .controls .secondary {
+      background: rgba(0,149,211,0.18);
+      color: #e8f7ff;
+      border: 1px solid rgba(0,149,211,0.4);
+    }
+    .controls .outline {
+      background: transparent;
+      color: rgba(255,149,149,0.9);
+      border: 1px solid rgba(255,75,75,0.4);
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-top: 1.2rem;
+    }
+
+    .metric {
+      background: rgba(0, 11, 26, 0.82);
+      border: 1px solid rgba(0, 149, 211, 0.25);
+      border-radius: 18px;
+      padding: 1rem;
+      color: #fff;
+    }
+    .metric span { display: block; }
+    .metric-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .metric-value {
+      font-size: 1.7rem;
+      font-weight: 700;
+      margin-top: 0.35rem;
+    }
+
+    .regions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+    }
+    .region-card {
+      background: rgba(5, 19, 42, 0.85);
+      border: 1px solid rgba(0, 149, 211, 0.2);
+      border-radius: 18px;
+      padding: 1rem 1.2rem;
+    }
+    .region-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+    .region-progress {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(148,163,184,0.2);
+      overflow: hidden;
+      margin: 0.5rem 0;
+    }
+    .region-progress > div {
+      height: 8px;
+      border-radius: 999px;
+      transition: width 0.25s ease;
+    }
+
+    .log-feed {
+      max-height: 500px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .log-entry {
+      background: rgba(3, 13, 30, 0.85);
+      border: 1px solid rgba(0, 149, 211, 0.2);
+      border-radius: 14px;
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+    }
+    .log-entry.success { border-left: 4px solid var(--success); }
+    .log-entry.warn { border-left: 4px solid var(--warn); }
+    .log-entry.error { border-left: 4px solid var(--error); }
+    .log-entry .meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.3rem;
+    }
+
+    .filter-select {
+      background: rgba(0, 11, 26, 0.82);
+      border: 1px solid rgba(0, 149, 211, 0.35);
+      color: var(--text);
+    }
+
+    .banner {
+      display: none;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(0, 167, 157, 0.18);
+      border: 1px solid rgba(0, 167, 157, 0.4);
+      border-radius: 18px;
+      padding: 1rem 1.5rem;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: var(--muted);
+      border: 1px dashed rgba(148,163,184,0.25);
+      border-radius: 16px;
+    }
+
+    @media (max-width: 992px) {
+      body { padding: 1rem; }
+      .controls { flex-direction: column; align-items: stretch; }
+      .controls button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <section class="surface">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+      <div>
+        <h2 class="mt-3">GemFire WAN Setup</h2>
+      </div>
+    </div>
+  </section>
+
+  <section class="surface">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <h4>Node Details</h4>
+      <button class="btn btn-sm btn-outline-info" onclick="resetToDefaults()">Reset to Defaults</button>
+    </div>
+    <table class="table table-dark table-sm align-middle mt-3" id="nodeTable">
+      <thead class="table-light text-dark">
+        <tr>
+          <th style="width:210px;">Name</th>
+          <th style="width:210px;">Public IP</th>
+          <th style="width:170px;">Region</th>
+          <th style="width:160px;">SSH User</th>
+          <th>SSH Key File</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for node in session.nodes %}
+        <tr>
+          <td><input class="form-control form-control-sm" value="{{node.name}}"></td>
+          <td><input class="form-control form-control-sm" value="{{node.public_ip}}"></td>
+          <td>
+            <select class="form-select form-select-sm">
+              <option value="US East" {% if node.region=='US East' %}selected{% endif %}>US East</option>
+              <option value="US West" {% if node.region=='US West' %}selected{% endif %}>US West</option>
+              <option value="EU" {% if node.region=='EU' %}selected{% endif %}>EU</option>
+            </select>
+          </td>
+          {% if loop.first %}
+          <td><input id="ssh_user" class="form-control form-control-sm" value="{{session.ssh_user}}"></td>
+          <td><input id="ssh_key" class="form-control form-control-sm" value="{{session.ssh_key}}"></td>
+          {% else %}
+          <td></td>
+          <td></td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="surface">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+      <div class="controls">
+        <button class="primary" id="setupBtn" onclick="runSetupWan()">Setup Cluster (WAN)</button>
+        <button class="outline" id="abortBtn" onclick="abortRun()" disabled>Abort</button>
+        <button class="secondary" id="checkLatencyBtn" onclick="checkLatency()">Check Latency</button>
+        <button class="secondary" id="cleanupBtn" onclick="cleanupData()">Cleanup Data</button>
+        <button class="secondary" id="openDashboardBtn" onclick="openDemoDashboard()">Open Dashboard</button>
+      </div>
+  </div>
+  </section>
+
+  <section class="surface">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div>
+        <h4>Node Status</h4>
+        <div class="muted small" id="statusHint">Awaiting run…</div>
+      </div>
+    </div>
+    <div class="regions-grid mt-3" id="regionsContainer">
+      <div class="empty">Configure nodes above and click “Setup Cluster” to begin.</div>
+  </div>
+  </section>
+
+  <section class="surface banner" id="finalBanner">
+    <div>
+      <h4 id="bannerTitle">Cluster Ready for Demo</h4>
+      <p class="muted mb-0" id="bannerSubtitle">All regions are healthy and verification passed.</p>
+    </div>
+    <button class="btn btn-outline-light btn-sm" onclick="window.open('{{ demo_url }}','_blank')">Open Demo UI</button>
+  </section>
+
+  <section class="surface">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <h4>Activity Console</h4>
+      <select id="logFilter" class="form-select form-select-sm filter-select" style="width:auto;">
+        <option value="all">All Events</option>
+        <option value="info">Info</option>
+        <option value="success">Success</option>
+        <option value="warn">Warnings</option>
+        <option value="error">Errors</option>
+      </select>
+    </div>
+    <div class="log-feed mt-3" id="logFeed">
+      <div class="empty">Log entries will appear here during execution.</div>
+    </div>
+  </section>
+
+<script>
+const socket = io();
+const steps = JSON.parse('{{ steps|tojson|safe }}');
+const verifySteps = ["WAN Read Check", "WAN Write Check", "Demo Environment Ready"];
+const statusColors = {
+  pending: { label: 'Pending', color: 'var(--muted)', pill: 'idle' },
+  progress: { label: 'In Progress', color: 'var(--accent)', pill: 'running' },
+  healthy: { label: 'Healthy', color: 'var(--success)', pill: 'ready' },
+  warning: { label: 'Needs Attention', color: 'var(--warn)', pill: 'running' },
+  error: { label: 'Error', color: 'var(--error)', pill: 'error' }
+};
+
+let regions = {};
+let logs = [];
+let activeActions = 0;
+let clusterState = 'Not Ready';
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadSavedConfiguration();
+  applyConfigToState();
+  attachConfigListeners();
+  renderRegions();
+  renderLogs();
+  updateSummary();
+  evaluateControlState();
+  setStatusHint('Awaiting run…');
+});
+
+function createStepState(stepList = steps) {
+  const map = {};
+  stepList.forEach(step => map[step] = 'gray');
+  return map;
+}
+
+socket.on('status_update', ({ region, step, color }) => {
+  const entry = ensureRegion(region);
+  entry.steps = entry.steps || createStepState();
+  entry.steps[step] = color || 'gray';
+  entry.lastUpdate = new Date().toLocaleTimeString();
+  entry.currentStep = step;
+  entry.currentColor = color || 'gray';
+  entry.message = `${step}: ${labelForColor(color || 'gray')}`;
+  recomputeRegionState(entry);
+  addLogEntry({
+    region,
+    message: entry.message,
+    level: color === 'red' ? 'error' : color === 'orange' ? 'warn' : color === 'green' ? 'success' : 'info'
+  });
+  renderRegions();
+  updateSummary();
+  evaluateControlState();
+});
+
+socket.on('log', ({ message, level }) => {
+  addLogEntry({ message, level: level || inferLevel(message) });
+  renderLogs();
+});
+
+function ensureRegion(region) {
+  if (!regions[region]) {
+    regions[region] = {
+      label: region,
+      nodeName: '',
+      ip: '',
+      status: 'pending',
+      message: 'Awaiting run',
+      lastUpdate: null,
+      percent: 0,
+      steps: createStepState(),
+      activeSteps: [...steps],
+      currentStep: null,
+      currentColor: null
+    };
+    recomputeRegionState(regions[region]);
+  }
+  return regions[region];
+}
+
+function renderRegions() {
+  const container = document.getElementById('regionsContainer');
+  if (!container) return;
+  const entries = Object.values(regions);
+  if (entries.length === 0) {
+    container.innerHTML = '<div class="empty">Configure nodes above and click “Setup Cluster” to begin.</div>';
+    return;
+  }
+  container.innerHTML = entries.map(region => {
+    const status = statusColors[region.status] || statusColors.pending;
+    const percent = region.percent || 0;
+    return `
+      <div class="region-card">
+        <div class="region-header">
+          <span>${region.label}</span>
+          <span class="badge" style="background:${status.color}; color:#04162e;">${status.label}</span>
+        </div>
+        <div class="muted small mb-2">${region.nodeName || '—'} • ${region.ip || '—'}</div>
+        <div class="region-progress">
+          <div style="width:${percent}%; background:${status.color};"></div>
+        </div>
+        <div class="mt-2">${region.message || 'Awaiting run'}</div>
+        <div class="muted small">${region.lastUpdate ? `Updated ${region.lastUpdate}` : ''}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function loadSavedConfiguration() {
+  const saved = localStorage.getItem('gemfire_config');
+  if (!saved) return;
+    try {
+      const config = JSON.parse(saved);
+    document.getElementById('ssh_user').value = config.ssh_user || '';
+    document.getElementById('ssh_key').value = config.ssh_key || '';
+    const rows = document.querySelectorAll('#nodeTable tbody tr');
+      config.nodes.forEach((node, idx) => {
+      if (!rows[idx]) return;
+      rows[idx].children[0].querySelector('input').value = node.name || '';
+      rows[idx].children[1].querySelector('input').value = node.public_ip || '';
+      rows[idx].children[2].querySelector('select').value = node.region || 'US East';
+    });
+  } catch (err) {
+    console.error('Error loading config', err);
+  }
+}
+
+function applyConfigToState() {
+  const nodes = getNodesFromTable();
+  regions = {};
+  nodes.forEach(node => {
+    regions[node.region] = {
+      label: node.region,
+      nodeName: node.name || '—',
+      ip: node.public_ip || '—',
+      status: 'pending',
+      message: 'Awaiting run',
+      lastUpdate: null,
+      percent: 0,
+      steps: createStepState(),
+      activeSteps: [...steps],
+      currentStep: null,
+      currentColor: null
+    };
+    recomputeRegionState(regions[node.region]);
+  });
+}
+
+function attachConfigListeners() {
+  document
+    .querySelectorAll('#nodeTable tbody input, #nodeTable tbody select')
+    .forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', handleConfigChange));
+}
+
+function handleConfigChange() {
+  const data = gatherData(false);
+  localStorage.setItem('gemfire_config', JSON.stringify(data));
+  applyConfigToState();
+  renderRegions();
+  updateSummary();
+}
+
+function getNodesFromTable() {
+  const rows = document.querySelectorAll('#nodeTable tbody tr');
+  return Array.from(rows).map(row => ({
+    name: row.children[0].querySelector('input').value.trim(),
+    public_ip: row.children[1].querySelector('input').value.trim(),
+    region: row.children[2].querySelector('select').value
+  }));
+}
+
+function gatherData(resetState = true) {
+  const data = {
+    ssh_user: document.getElementById('ssh_user').value.trim(),
+    ssh_key: document.getElementById('ssh_key').value.trim(),
+    nodes: getNodesFromTable()
+  };
+  if (resetState) {
+    applyConfigToState();
+    renderRegions();
+  }
+  return data;
+}
+
+async function runStep(endpoint, payload) {
+  activeActions += 1;
+  updateSummary();
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`${response.status} ${text}`);
+    }
+  } finally {
+    activeActions = Math.max(0, activeActions - 1);
+    updateSummary();
+  }
+}
+
+async function runSetupWan() {
+  const data = gatherData();
+  if (!confirm('Run automated setup for all configured nodes?')) return;
+
+  document.getElementById('finalBanner').style.display = 'none';
+  clusterState = 'Setup in Progress';
+  setStatusHint('Setup in progress across all regions…');
+  Object.values(regions).forEach(region => {
+    region.status = 'progress';
+    region.message = 'Launching setup';
+    region.activeSteps = [...steps];
+    region.steps = createStepState();
+    region.currentStep = null;
+    region.currentColor = null;
+    region.percent = 0;
+    recomputeRegionState(region);
+    region.lastUpdate = new Date().toLocaleTimeString();
+  });
+  renderRegions();
+  updateSummary();
+  disableControls(true);
+  try {
+    await runStep('/verify_nodes', data);
+    
+    // Run cleanup step and wait a bit for it to complete
+    await runStep('/prepare_hosts', data);
+    addLogEntry({ region: 'System', message: 'Waiting for cleanup to complete...', level: 'info' });
+    // Wait for cleanup to complete (it runs in background but we give it time)
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    await runStep('/start_demo', data);
+    // Note: WAN setup runs in background via WebSocket updates
+    // Don't mark as complete here - let WebSocket status updates control completion
+    addLogEntry({ region: 'System', message: 'WAN setup started - monitoring progress...', level: 'info' });
+  } catch (err) {
+    clusterState = 'Not Ready';
+    setStatusHint('Setup encountered issues. Review logs.');
+    addLogEntry({ region: 'System', message: `Setup failed: ${err.message}`, level: 'error' });
+  } finally {
+    disableControls(false);
+    renderRegions();
+    updateSummary();
+  }
+}
+
+async function cleanupData() {
+  const cleanupBtn = document.getElementById('cleanupBtn');
+  const originalText = cleanupBtn.textContent;
+  
+  if (!confirm('This will remove all the data')) {
+    return;
+  }
+  
+  cleanupBtn.disabled = true;
+  cleanupBtn.textContent = 'Cleaning...';
+  
+  try {
+    const response = await fetch('/cleanup_data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      alert('All the data removed');
+    } else {
+      alert(`❌ Cleanup failed: ${result.message || 'Unknown error'}`);
+    }
+  } catch (error) {
+    alert(`❌ Error: ${error.message}`);
+  } finally {
+    cleanupBtn.disabled = false;
+    cleanupBtn.textContent = originalText;
+  }
+}
+
+async function checkLatency() {
+  const btn = document.getElementById('checkLatencyBtn');
+  const originalText = btn.textContent;
+  
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  
+  try {
+    const response = await fetch('/check_latency', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok && result.status === 'success') {
+      // Build results message
+      let message = '📊 Latency Check Results:\n\n';
+      message += `Postgres:\n`;
+      message += `  Read time: ${result.postgres.read_ms}ms\n\n`;
+      
+      message += `GemFire Nodes:\n`;
+      for (const [nodeName, nodeResult] of Object.entries(result.gemfire)) {
+        if (nodeResult.success) {
+          message += `  ${nodeName}: ${nodeResult.read_ms}ms\n`;
+        } else {
+          message += `  ${nodeName}: Failed - ${nodeResult.error || 'Unknown error'}\n`;
+        }
+      }
+      
+      alert(message);
+      addLogEntry({ region: 'System', message: 'Latency check completed - see alert for details', level: 'success' });
+    } else {
+      alert(`❌ Latency check failed: ${result.message || 'Unknown error'}`);
+      addLogEntry({ region: 'System', message: `Latency check failed: ${result.message}`, level: 'error' });
+    }
+  } catch (error) {
+    alert(`❌ Error: ${error.message}`);
+    addLogEntry({ region: 'System', message: `Latency check error: ${error.message}`, level: 'error' });
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+async function abortRun() {
+  if (!confirm('Are you sure you want to abort the current setup?')) return;
+  
+  try {
+    const response = await fetch('/abort_setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (response.ok) {
+      addLogEntry({ region: 'System', message: 'Setup cancellation requested', level: 'warn' });
+      disableControls(false);
+    } else {
+      addLogEntry({ region: 'System', message: 'Failed to abort setup', level: 'error' });
+    }
+  } catch (err) {
+    addLogEntry({ region: 'System', message: `Error aborting setup: ${err.message}`, level: 'error' });
+  }
+}
+
+async function openDemoDashboard() {
+  const btn = document.getElementById('openDashboardBtn');
+  const originalText = btn.textContent;
+  
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  
+  try {
+    // First, try to start the demo dashboard
+    const response = await fetch('/start_demo_dashboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      // Open dashboard in new window
+      const dashboardUrl = result.url || 'http://localhost:5002';
+      window.open(dashboardUrl, '_blank');
+      
+      if (result.status === 'already_running') {
+        addLogEntry({ region: 'System', message: 'Demo dashboard already running', level: 'info' });
+      } else {
+        addLogEntry({ region: 'System', message: 'Demo dashboard started', level: 'success' });
+      }
+    } else {
+      alert(`❌ Failed to start demo dashboard: ${result.message || 'Unknown error'}`);
+      addLogEntry({ region: 'System', message: `Failed to start demo dashboard: ${result.message}`, level: 'error' });
+    }
+  } catch (error) {
+    alert(`❌ Error: ${error.message}`);
+    addLogEntry({ region: 'System', message: `Error starting demo dashboard: ${error.message}`, level: 'error' });
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+
+function disableControls(flag) {
+  document.getElementById('setupBtn').disabled = flag;
+  document.getElementById('abortBtn').disabled = !flag;
+}
+
+function renderLogs() {
+  const feed = document.getElementById('logFeed');
+  if (!feed) return;
+  const filter = document.getElementById('logFilter')?.value || 'all';
+  const filtered = logs.filter(entry => filter === 'all' || entry.level === filter);
+  if (filtered.length === 0) {
+    feed.innerHTML = '<div class="empty">No log entries for this filter yet.</div>';
+    return;
+  }
+  feed.innerHTML = filtered.map(entry => `
+    <div class="log-entry ${entry.level}">
+      <div class="meta">
+        <span>${entry.region}</span>
+        <span>${entry.time}</span>
+      </div>
+      <div>${entry.message}</div>
+    </div>
+  `).join('');
+}
+
+document.getElementById('logFilter').addEventListener('change', renderLogs);
+
+function updateSummary() {
+  const regionList = Object.values(regions);
+  const healthy = regionList.filter(r => r.status === 'healthy').length;
+  const healthyMetric = document.getElementById('metricHealthy');
+  if (healthyMetric) {
+    healthyMetric.textContent = `${healthy} / ${regionList.length || 0}`;
+  }
+
+  const banner = document.getElementById('finalBanner');
+
+  const ready = regionList.length > 0 && healthy === regionList.length;
+  const hasProgress = regionList.some(r => r.status === 'progress');
+  const hasError = regionList.some(r => r.status === 'error');
+
+  if (activeActions > 0 || hasProgress) {
+    clusterState = 'Setup in Progress';
+  } else if (ready && !hasError) {
+    clusterState = 'Ready';
+  } else if (hasError) {
+    clusterState = 'Attention Required';
+  } else {
+    clusterState = 'Not Ready';
+  }
+
+  if (clusterState === 'Setup in Progress') {
+    setStatusHint('Setup/verification running across all regions…');
+  } else if (clusterState === 'Ready') {
+    setStatusHint('WAN setup completed.');
+  } else if (clusterState === 'Attention Required') {
+    setStatusHint('Attention needed. Review logs for failing regions.');
+  } else {
+    setStatusHint('Awaiting run…');
+  }
+
+  if (banner) {
+    banner.style.display = clusterState === 'Ready' ? 'flex' : 'none';
+  }
+
+  const lastUpdated = document.getElementById('lastUpdated');
+  if (lastUpdated) {
+    lastUpdated.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+  }
+}
+
+function setStatusHint(text) {
+  const hint = document.getElementById('statusHint');
+  if (hint) {
+    hint.textContent = text;
+  }
+}
+
+function labelForColor(color) {
+  switch (color) {
+    case 'green': return 'Complete';
+    case 'red': return 'Failed';
+    case 'orange': return 'In Progress';
+    default: return 'Pending';
+  }
+}
+
+function recomputeRegionState(regionEntry) {
+  const activeList = regionEntry.activeSteps && regionEntry.activeSteps.length ? regionEntry.activeSteps : steps;
+  const stepState = regionEntry.steps || createStepState(activeList);
+  let greens = 0;
+  let oranges = 0;
+  let reds = 0;
+  activeList.forEach(step => {
+    const color = stepState[step] || 'gray';
+    if (color === 'green') greens += 1;
+    if (color === 'orange') oranges += 1;
+    if (color === 'red') reds += 1;
+  });
+  const totalSteps = activeList.length || steps.length;
+  regionEntry.percent = Math.round((greens / totalSteps) * 100);
+  if (reds > 0) {
+    regionEntry.status = 'error';
+    regionEntry.message = regionEntry.currentStep
+      ? `${regionEntry.currentStep}: Failed`
+      : 'Attention required';
+  } else if (greens === totalSteps) {
+    regionEntry.status = 'healthy';
+    regionEntry.message = 'All steps complete';
+  } else if (oranges > 0 || greens > 0) {
+    regionEntry.status = 'progress';
+    if (!regionEntry.currentStep) {
+      regionEntry.message = `${greens}/${totalSteps} steps complete`;
+    }
+  } else {
+    regionEntry.status = 'pending';
+    regionEntry.message = 'Awaiting run';
+  }
+}
+
+function addLogEntry({ region, message, level }) {
+  logs.unshift({
+    region: region || 'System',
+    message,
+    level: level || 'info',
+    time: new Date().toLocaleTimeString()
+  });
+  logs = logs.slice(0, 200);
+  renderLogs();
+}
+
+function inferLevel(message) {
+  const lower = message.toLowerCase();
+  if (lower.includes('fail') || lower.includes('error')) return 'error';
+  if (lower.includes('warn') || lower.includes('retry')) return 'warn';
+  if (lower.includes('success') || lower.includes('complete') || lower.includes('ready')) return 'success';
+  return 'info';
+}
+
+function resetToDefaults() {
+  if (confirm('Reset node configuration to defaults?')) {
+    localStorage.removeItem('gemfire_config');
+    window.location.reload();
+  }
+}
+
+function evaluateControlState() {
+  const verifyBtn = document.getElementById('verifyBtn');
+  if (verifyBtn) {
+    verifyBtn.disabled = !Object.values(regions).every(r => r.status === 'healthy');
+  }
+}
+</script>
+</body>
+</html>
+

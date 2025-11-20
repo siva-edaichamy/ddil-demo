@@ -1,0 +1,5 @@
+[
+  {"mission": "Patrol Alpha", "update": "Entering Zone 3", "priority": "High"},
+  {"mission": "Recon Delta", "update": "Signal Weak, Switching Channel", "priority": "Medium"},
+  {"mission": "Rescue Echo", "update": "Deploying drone unit", "priority": "Critical"}
+]

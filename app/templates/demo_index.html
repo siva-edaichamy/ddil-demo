@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GemFire WAN DDIL Demo</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #050915;
+      --bg-secondary: #0b1326;
+      --bg-tertiary: #111b35;
+      --pane-dark: #121d3a;
+      --accent-cyan: #00c2ff;
+      --accent-indigo: #5a67ff;
+      --accent-magenta: #ff4d94;
+      --accent-green: #4bdc7c;
+      --accent-amber: #ffd86f;
+      --text-primary: #f7f9ff;
+      --text-secondary: #b7c4ff;
+      --border-color: rgba(255, 255, 255, 0.12);
+      --glass: rgba(6, 16, 40, 0.8);
+      --glass-strong: rgba(10, 25, 60, 0.9);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 15% 20%, rgba(118, 0, 255, 0.3), transparent 55%),
+        radial-gradient(circle at 80% 18%, rgba(0, 180, 255, 0.25), transparent 45%),
+        linear-gradient(145deg, #040616 0%, #070b1f 40%, #120a2a 80%, #190533 100%);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .main-layout {
+      display: flex;
+      gap: 1.5rem;
+      max-width: 1800px;
+      margin: 1.5rem auto 0;
+      align-items: flex-start;
+    }
+
+    .map-container {
+      background: linear-gradient(135deg, rgba(12, 24, 60, 0.95), rgba(6, 14, 35, 0.92));
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      padding: 1.2rem;
+      box-shadow: 0 30px 55px rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(10px);
+      margin-top: 1rem;
+    }
+
+    #map {
+      height: 600px;
+      width: 100%;
+      border-radius: 8px;
+      border: 2px solid var(--border-color);
+    }
+
+    .log-panel {
+      width: 420px;
+      background: var(--glass);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      padding: 1.8rem;
+      box-shadow: 0 30px 55px rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(12px);
+    }
+
+    .log-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .log-title::before {
+      content: '';
+      width: 4px;
+      height: 20px;
+      background: var(--accent-blue);
+      border-radius: 2px;
+    }
+
+    .log-content {
+      background: rgba(3, 8, 24, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 1rem;
+      height: 540px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .log-content::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .log-content::-webkit-scrollbar-track {
+      background: var(--bg-tertiary);
+      border-radius: 3px;
+    }
+
+    .log-content::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+
+    .log-entry {
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+    }
+
+    .log-time {
+      color: var(--accent-blue);
+      font-weight: 600;
+    }
+
+    .controls-panel {
+      flex: 1;
+      background: var(--glass-strong);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 1.8rem;
+      box-shadow: 0 35px 65px rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(15px);
+    }
+
+    .controls-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text-primary);
+    }
+
+    .control-row {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .control-row .btn-primary {
+      margin-left: auto;
+    }
+
+    .form-control, .form-select {
+      background: rgba(255,255,255,0.04);
+      color: var(--text-primary);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      transition: all 0.2s;
+    }
+
+    .form-control {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .form-select {
+      min-width: 180px;
+    }
+
+    .form-control:focus, .form-select:focus {
+      outline: none;
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 0 3px rgba(0, 194, 255, 0.2);
+      background: rgba(255,255,255,0.08);
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    #submarineBtn,
+    #aircraftLagBtn {
+      min-width: 640px;
+      max-width: 100%;
+      justify-content: center;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    .btn-primary {
+      background: linear-gradient(130deg, var(--accent-indigo), var(--accent-magenta));
+      color: white;
+      box-shadow: 0 18px 35px rgba(90, 103, 255, 0.4);
+      border: none;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+    }
+
+    .btn-warning {
+      background: linear-gradient(130deg, var(--accent-green), var(--accent-amber));
+      color: #041520;
+      font-weight: 700;
+      box-shadow: 0 18px 35px rgba(75, 220, 124, 0.35);
+      border: none;
+    }
+
+    .btn-warning:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+    }
+
+    .btn-danger {
+      background: linear-gradient(130deg, #7c3aed, #ec4899);
+      color: white;
+      box-shadow: 0 18px 35px rgba(124, 58, 237, 0.35);
+      border: none;
+    }
+
+    .btn-danger:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
+    }
+
+    .scenario-buttons {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 1.5rem;
+    }
+
+    .leaflet-popup-content-wrapper {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+
+    .leaflet-popup-content {
+      margin: 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.85rem;
+    }
+
+    .leaflet-popup-tip {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+    }
+
+    @media (max-width: 1400px) {
+      .main-layout {
+        flex-direction: column;
+      }
+
+      .log-panel {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 style="color:#ffffff;">Real-time Data Synchronization in a DDIL Environment</h1>
+  </div>
+
+  <div class="main-layout">
+    <div class="controls-panel">
+      <div class="controls-title">Data Scenarios</div>
+
+      <div class="control-row">
+        <select id="nodeSelect" class="form-select">
+          <option value="C2">🎯 C2 Base</option>
+          <option value="Aircraft">✈️ Aircraft Carrier</option>
+          <option value="Submarine">🚢 Submarine</option>
+        </select>
+        <input type="text" id="dataValue" class="form-control" placeholder="Enter data value...">
+        <button class="btn btn-primary" onclick="addData()">
+          <span>➕</span> Add Data
+        </button>
+      </div>
+
+      <div class="map-container">
+        <div id="map"></div>
+      </div>
+
+      <div class="scenario-buttons">
+        <button class="btn btn-danger" id="submarineBtn" onclick="toggleSubmarine()">
+          <span>🌊</span> Submarine Dive
+        </button>
+        <button class="btn btn-warning" id="aircraftLagBtn" onclick="toggleReceiver('Aircraft')">
+          <span>⚠️</span> Simulate Aircraft Lag
+        </button>
+      </div>
+    </div>
+
+    <div class="log-panel">
+      <div class="log-title">Network Logs</div>
+      <div class="log-content" id="logPanel"></div>
+    </div>
+  </div>
+
+<script>
+  const socket = io('http://localhost:5002');
+  const nodes = {{ nodes|tojson|safe }};
+  let submarineDived = false;
+
+  // Custom Leaflet icons
+  const greenIcon = new L.Icon({
+    iconUrl: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32]
+  });
+
+  const redIcon = new L.Icon({
+    iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32]
+  });
+
+  const yellowIcon = new L.Icon({
+    iconUrl: 'https://maps.google.com/mapfiles/ms/icons/yellow-dot.png',
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32]
+  });
+
+  // Initialize map
+  const map = L.map('map').setView([32, -60], 3.3);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  // Create markers for each node
+  const markers = {
+    'C2': L.marker([36.85, -76.29], {icon: greenIcon})
+      .addTo(map)
+      .bindPopup('', { autoClose: false, closeOnClick: false })
+      .openPopup(),
+    'Aircraft': L.marker([20, -140], {icon: greenIcon})
+      .addTo(map)
+      .bindPopup('', { autoClose: false, closeOnClick: false })
+      .openPopup(),
+    'Submarine': L.marker([35, 18], {icon: greenIcon})
+      .addTo(map)
+      .bindPopup('', { autoClose: false, closeOnClick: false })
+      .openPopup()
+  };
+
+  // Add dotted lines connecting the three nodes
+  const nodePositions = {
+    'C2': [36.85, -76.29],
+    'Aircraft': [20, -140],
+    'Submarine': [35, 18]
+  };
+
+  // Create polylines connecting all three nodes
+  const connections = [
+    [nodePositions['C2'], nodePositions['Aircraft']],
+    [nodePositions['C2'], nodePositions['Submarine']],
+    [nodePositions['Aircraft'], nodePositions['Submarine']]
+  ];
+
+  connections.forEach(connection => {
+    L.polyline(connection, {
+      color: '#9d4edd',  // Purple color for better visibility
+      weight: 3,
+      opacity: 0.8,
+      dashArray: '10, 5'  // Creates dotted/dashed line (10px dash, 5px gap)
+    }).addTo(map);
+  });
+
+  // Add data to a node
+  function addData() {
+    const node = document.getElementById('nodeSelect').value;
+    const value = document.getElementById('dataValue').value.trim();
+
+    if (value === "") {
+      alert("Please enter data!");
+      return;
+    }
+
+    // Log immediately when posting starts
+    logMessage(`📤 Posting data to ${node}: "${value}"...`);
+
+    fetch('/add_data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node: node, value: value })
+    })
+    .then(response => {
+      return response.json().then(data => {
+        if (!response.ok) {
+          logMessage(`❌ Failed to add data: ${data.message || 'Unknown error'}`);
+        }
+        // Success message will come via SocketIO from backend (includes key details)
+        document.getElementById('dataValue').value = '';
+      });
+    })
+    .catch(error => {
+      logMessage(`❌ Error adding data: ${error.message || error}`);
+    });
+  }
+
+  // Toggle submarine dive/surface
+  function toggleSubmarine() {
+    const action = submarineDived ? 'surface' : 'dive';
+    const btn = document.getElementById('submarineBtn');
+    const pendingLabel = action === 'dive' ? 'Submarine Diving...' : 'Submarine Surfacing...';
+    btn.disabled = true;
+    btn.innerHTML = `<span>🌊</span> ${pendingLabel}`;
+
+    fetch('/toggle_submarine', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action })
+    })
+    .then(response => response.json())
+    .then(data => {
+      logMessage(data.status);
+      if (action === 'dive') {
+        markers['Submarine'].setIcon(redIcon);
+        btn.innerHTML = '<span>🌊</span> Submarine Surface';
+        submarineDived = true;
+      } else {
+        markers['Submarine'].setIcon(greenIcon);
+        btn.innerHTML = '<span>🌊</span> Submarine Dive';
+        submarineDived = false;
+      }
+      btn.disabled = false;
+    })
+    .catch(error => {
+      logMessage(`Error toggling submarine: ${error}`);
+      btn.disabled = false;
+      btn.innerHTML = submarineDived
+        ? '<span>🌊</span> Submarine Surface'
+        : '<span>🌊</span> Submarine Dive';
+    });
+  }
+
+  // Toggle receiver (simulate lag)
+  function toggleReceiver(node) {
+    const btn = document.getElementById('aircraftLagBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span>⚠️</span> Aircraft Lag Simulated...';
+    markers[node].setIcon(yellowIcon);
+
+    fetch('/toggle_receiver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node: node })
+    })
+    .then(response => response.json())
+    .then(data => {
+      logMessage(data.status);
+      setTimeout(() => {
+        markers[node].setIcon(greenIcon);
+        logMessage(`${node} connection restored (GREEN)`);
+        btn.disabled = false;
+        btn.innerHTML = '<span>⚠️</span> Simulate Aircraft Lag';
+      }, 5000);
+    })
+    .catch(error => {
+      logMessage(`Error toggling receiver: ${error}`);
+      markers[node].setIcon(greenIcon);
+      btn.disabled = false;
+      btn.innerHTML = '<span>⚠️</span> Simulate Aircraft Lag';
+    });
+  }
+
+  // Log message to panel
+  function logMessage(message) {
+    const logPanel = document.getElementById('logPanel');
+    const timestamp = new Date().toLocaleTimeString();
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `<span class="log-time">${timestamp}</span> - ${message}`;
+    logPanel.appendChild(entry);
+    logPanel.scrollTop = logPanel.scrollHeight;
+  }
+
+  // Update data from socket
+  socket.on('update_data', function(data) {
+    for (let node in markers) {
+      const entries = data[node] || {};
+      let content = `<strong style="color: #3b82f6; font-size: 1.1em;">${node}</strong><br><br>`;
+
+      if (Object.keys(entries).length === 0) {
+        content += '<em style="color: #9ca3af;">No data yet</em>';
+      } else {
+        for (let key in entries) {
+          content += `<span style="color: #10b981;">${key}</span> = <span style="color: #f3f4f6;">${entries[key]}</span><br>`;
+        }
+      }
+
+      markers[node].setPopupContent(content);
+    }
+  });
+
+  // Handle socket connection events
+  socket.on('connect', function() {
+    logMessage('✅ Connected to demo server');
+  });
+
+  socket.on('disconnect', function() {
+    logMessage('❌ Disconnected from demo server');
+  });
+
+  // Handle log messages from server
+  socket.on('log', function(data) {
+    if (data && data.message) {
+      logMessage(data.message);
+    }
+  });
+
+  socket.on('connect_error', function(error) {
+    logMessage('⚠️ Connection error - make sure demo server is running on port 5002');
+  });
+
+  // Allow Enter key to add data
+  document.getElementById('dataValue').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      addData();
+    }
+  });
+
+  // Initial log message
+  logMessage('GemFire WAN Demo initialized. Ready to track data replication.');
+</script>
+</body>
+</html>

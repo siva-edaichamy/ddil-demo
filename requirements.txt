@@ -1,0 +1,7 @@
+Flask
+Flask-SocketIO
+paramiko
+requests
+eventlet
+psycopg2-binary
+python-dotenv

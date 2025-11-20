@@ -1,0 +1,22 @@
+{
+  "ssh_user": "ec2-user",
+  "ssh_key": "/path/to/your/key.pem",
+  "nodes": [
+    {
+      "name": "C2",
+      "public_ip": "0.0.0.0",
+      "region": "US East"
+    },
+    {
+      "name": "Aircraft",
+      "public_ip": "0.0.0.0",
+      "region": "US West"
+    },
+    {
+      "name": "Submarine",
+      "public_ip": "0.0.0.0",
+      "region": "EU"
+    }
+  ]
+}
+

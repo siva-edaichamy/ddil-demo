@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  ddil-demo:
+    build: .
+    container_name: ddil-demo
+    ports:
+      - "5004:5004"  # Control Dashboard
+      - "5002:5002"  # Demo Dashboard
+    volumes:
+      # Mount config directory for persistence
+      - ./config:/app/config
+      # Mount logs directory
+      - ./logs:/var/log/supervisor
+      # Mount SSH keys if needed (optional - adjust path as needed)
+      # - ~/.ssh:/root/.ssh:ro
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      # Postgres connection (if using latency check)
+      - POSTGRES_HOST=${POSTGRES_HOST:-localhost}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
+      # Demo dashboard URL
+      - DEMO_DASHBOARD_URL=${DEMO_DASHBOARD_URL:-http://localhost:5002}
+    # Load .env file if it exists
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - ddil-network
+
+networks:
+  ddil-network:
+    driver: bridge
+
